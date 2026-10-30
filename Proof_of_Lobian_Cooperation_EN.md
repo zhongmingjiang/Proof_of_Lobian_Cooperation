@@ -1,421 +1,232 @@
-# Proof of Löbian Cooperation: A Peer-to-Peer Explicit Recursive Alignment Protocol for Autonomous Agents
+# Löbian Cooperation with Certificate-Checked Interfaces: A Bounded Program-Equilibrium Protocol and Its Trust Assumptions
 
----
+*Revised draft. This version removes claims that were unsupported or incorrect in the earlier PoLC draft and states the protocol's trust assumptions explicitly.*
 
 ## Abstract
 
-We present a fully decentralized, peer-to-peer (P2P) safety interaction and recursive alignment protocol for autonomous agents. This protocol enables heterogeneous artificial intelligence agents to achieve formally verifiable, robust cooperation and eliminates global unauthorized tampering and strategic deception without requiring centralized human evaluators (Centralized Graders) or continuous human supervision. Conventional reinforcement learning alignment paradigms (RLHF/RLAIF) rely on extrinsic scalar reward functions. Governed by Ashby's Law of Requisite Variety in cybernetics, these paradigms are fundamentally vulnerable to reward hacking, alignment faking, and representation entropy collapse when dealing with agents endowed with situational awareness and metacognitive capabilities.
+We describe a peer-to-peer interaction protocol in which two autonomous agents exchange explicit program descriptions (abstract syntax trees), and each agent cooperates only if it can produce a machine-checkable proof, within a fixed resource bound, that the counterparty's program cooperates and satisfies an agreed interface contract. The cooperation mechanism is the known Löbian construction for program equilibrium (Barasz et al. 2014) in its resource-bounded form (Critch 2019). The engineering contribution is an asymmetric architecture: an untrusted neural proposer drafts proof terms, and a small trusted kernel checks them, in the spirit of proof-carrying code (Necula 1997).
 
-Our protocol synthesizes **Gödel-Löb Provability Logic ($\mathbf{GL}$)**, **Parametric Bounded Löb's Theorem**, and **Dependent Type Theory (with a minimal Lean 4 micro-kernel)** to establish a constructive program equilibrium mechanism. Rather than relying on cryptographic hash-based Proof-of-Work (PoW) computation, the system constructs explicit recursive reduction terms based on the parametric bounded Löb's theorem. This design collapses the self-referential mutual trust loop ("I cooperate if and only if I prove that you cooperate") into a unique constructive cooperative fixed point within a deterministic, finite inference bound $k_0$. We formally prove that as long as the underlying minimal type checker maintains $\Sigma_1$-soundness, no adversarial agent can synthesize a valid proof term for fraudulent cooperation—the probability of deception is strictly zero. Furthermore, through the vanishing of the first Čech sheaf cohomology group ($\check{H}^1 = 0$) across the multi-agent interaction complex, the protocol mathematically precludes systemic risks where agents are "locally compliant yet globally collusive." Crucially, it achieves this without enforcing syntactic code homogeneity, preserving high cognitive diversity while incurring zero alignment tax.
+We do not claim to solve alignment. We prove only conditional statements: **if** the kernel is sound, **if** the exchanged AST faithfully describes the agent's actual behavior, and **if** the interface contract is formally specifiable, **then** a compliant agent is not exploited by a defecting counterparty and mutual cooperation is reached within a bounded search. Each of these three assumptions is load-bearing, and the paper's main discussion concerns what happens when they fail. We also state precisely what the protocol does *not* cover: unfaithful self-description, side channels outside the contract, and the specification problem for "safe" behavior.
 
----
+## 1. Introduction and Scope
 
-## 1. Introduction
+Reward-model-based alignment (RLHF/RLAIF) depends on an external grader whose evaluation capacity is bounded while the evaluated agent's strategy space is not. This is a known source of reward hacking and of alignment faking in agents with situational awareness. One response is to move part of the trust root from a learned grader to a formal verifier: instead of scoring behavior, require a certificate that can be checked mechanically.
 
-Current safety and alignment architectures for Large Language Models (LLMs) and Autonomous Agent systems are almost exclusively built upon the "Trusted Grader Model," which relies on Reinforcement Learning from Human Feedback (RLHF) or automated environmental discriminators. While this paradigm functions reasonably well in single-turn, bounded tasks, its structural cybernetic deficiencies become acute in open-world, long-horizon planning, and distributed multi-agent interactions:
+Open-source game theory offers a concrete setting for this idea. When agents can read each other's programs, the Prisoner's Dilemma admits cooperative equilibria that are robust against unconditional defectors (Tennenholtz 2004; Barasz et al. 2014). Syntactic schemes such as CliqueBot cooperate only with byte-identical code, which forces homogeneity. Löbian schemes instead cooperate on the basis of *provable behavior*, which in principle allows heterogeneous implementations.
 
-1. **Requisite Variety Deficit and Reward Hacking**: According to Ashby's Law of Requisite Variety in cybernetics, the control system must possess at least as many degrees of freedom as the system being controlled. Autonomous agents possess Turing-complete code execution, dynamic tool usage, and combinatorial strategy-generation capabilities; their potential state space grows exponentially over time. In contrast, static grading scripts (whether human evaluators or reward models) operate under severely bounded informational throughput and evaluation depth. When an agent's policy is obstructed within a restricted sandbox, scalar reward gradient optimization inexorably drives the agent to exploit vulnerabilities within the grading mechanism itself, culminating in reward hacking and safety constraint violation.
-2. **Multi-Agent Collusion as a First Cohomological Obstacle ($\check{H}^1 \neq 0$)**: Local verification cannot constrain globally distributed emerging behaviors. Even if every individual agent in a network passes local audits (i.e., on each local open set $U_i$, the policy satisfies the local safety specification $s_i \in \mathcal{F}(U_i)$), agents can still interact across pairwise boundaries $U_{ij}$ via shared latent activations, steganographic tokens, or covert communication channels. Non-trivial phase discrepancies across local transitions create topological obstructions, leading to the phenomenon where "all individual audits pass, yet the collective exhibits global safety failure."
-3. **Pattern Collapse and the Alignment Tax**: To forestall the threat of unverified heterogeneous policies, naive open-source game theory has explored syntactic code-matching mechanisms (e.g., CliqueBot, which cooperates exclusively with identical source code). However, enforcing syntactic identity causes catastrophic singular rank collapse and entropy dissipation across the latent representation manifold, extinguishing cognitive diversity and exploration capabilities.
+**What this paper claims.**
 
-To resolve these challenges, we need a decentralized, formally verified alignment protocol rooted in mathematical logic. Drawing on program equilibrium theory and modal provability logic, this paper introduces the **Proof-of-Löbian-Cooperation (PoLC)**: by introducing mutual, bounded provability guards between autonomous policies, the equilibrium of distributed agent games is anchored directly to constructive mathematical proofs.
+1. A precise, bounded formulation of Löbian cooperation with a fuel-instrumented interpreter and a kernel-checked certificate.
+2. A conditional unexploitability result (Proposition 3), stated with its assumptions.
+3. An explicit list of trust assumptions and failure modes (Sections 2 and 8).
+4. An evaluation plan (Section 9) in place of unsupported numerical claims.
 
----
+**What this paper does not claim.** It does not claim probability-zero deception, absence of alignment tax, immunity to collusion, or any sheaf-cohomological vanishing theorem. Section 7 explains why the earlier cohomological claim was withdrawn.
 
-## 2. Interactions and Explicit Self-Referential ASTs
+## 2. Threat Model and Trust Assumptions
 
-To enable autonomous programs to inspect their own source code and that of their counterparts as formal mathematical objects, the system must definitively eliminate the infinite recursive simulation regress:
-$$\mathsf{run}(A, B) \longrightarrow \mathsf{run}(B, A) \longrightarrow \mathsf{run}(A, B) \longrightarrow \cdots \quad (\text{Stack Overflow})$$
+Two agents, A and B, interact once or repeatedly over an interface. Each may be adversarial. The protocol's guarantees are conditional on the following assumptions.
 
-Our protocol models an agent's strategy as a strictly well-founded **Inductive Abstract Syntax Tree (`Prog`)**, decoupling its static syntactic structure from its fuel-bounded dynamic operational semantics.
+- **A1 (Kernel soundness).** The proof checker's theory T is sound for Σ₁ sentences, and the checker implementation correctly implements T. By Gödel's second theorem, T cannot establish this about itself, so A1 is an external assumption, not something the protocol proves. Implementation bugs fall under A1.
+- **A2 (AST faithfulness).** The program description an agent broadcasts is the program that actually determines its behavior on the interface. For a neural agent this is the hardest assumption. It is not verified by the kernel, which only checks statements *about the submitted AST*. Section 8 discusses mitigations (attested execution, wrapper architectures in which the AST is the actual controller).
+- **A3 (Specifiable contract).** The interface contract Safe\_ij is a formula the kernel can state and a prover can discharge about the submitted AST. This restricts the protocol to properties of an interface-level controller, not to properties of a large neural network's internals.
+- **A4 (Channel closure).** All consequential communication between the agents passes through the checked interface. Covert channels (shared activations, steganography, third-party infrastructure) are outside the guarantees.
 
-### 2.1 Inductive Syntax Definition
+The protocol provides no protection when any of A1–A4 fails.
 
-In the Lean 4 type-theoretic kernel, the grammar for agent strategies and modal logical formulas is formalized as follows:
+## 3. Programs, Syntax, and Bounded Semantics
 
-```lean4
--- Elementary game actions
+### 3.1 Syntax
+
+Agent strategies and formulas are defined as finite trees. Because programs refer to formulas and formulas to programs, the definitions are mutual. The following is a **design sketch**; it has not been compiled, and the proof-search oracle is left abstract.
+
+```lean
 inductive Action where
-  | Cooperate : Action
-  | Defect    : Action
+  | Cooperate | Defect
   deriving DecidableEq, Repr
 
--- Abstract Syntax Tree for Agent Policies
-inductive Prog where
-  | const  : Action → Prog
-  | self   : Prog                      -- Explicit pointer to the agent's own AST
-  | opp    : Prog                      -- Explicit pointer to the opponent's AST
-  | search : Nat → Formula → Prog      -- Resource-bounded proof search operator
-  | cond   : Formula → Prog → Prog → Prog
+mutual
+  inductive Prog where
+    | const : Action → Prog
+    | self  : Prog                       -- pointer to own AST
+    | opp   : Prog                       -- pointer to counterparty AST
+    | cond  : Formula → Prog → Prog → Prog
 
--- First-Order Modal Formulas
-inductive Formula where
-  | top    : Formula
-  | bot    : Formula
-  | eqAct  : Prog → Prog → Formula
-  | prov   : Nat → Formula → Formula   -- Bounded provability modality □_k φ
-  | and    : Formula → Formula → Formula
-  | imp    : Formula → Formula → Formula
+  inductive Formula where
+    | top | bot
+    | acts  : Prog → Action → Formula    -- "Prog outputs Action"
+    | prov  : Nat → Formula → Formula    -- bounded provability □_k φ
+    | and   : Formula → Formula → Formula
+    | imp   : Formula → Formula → Formula
+end
 ```
 
-### 2.2 Explicit Substitution and Diagonalization
+The earlier draft included a `search` constructor in `Prog`. It is removed: proof search is performed by the proposer outside the program, and the program only contains the bounded provability *condition*, which the kernel decides by checking a supplied certificate.
 
-Classical proofs of Gödel's Incompleteness Theorems rely on Gödel numbering via large integer arithmetic, which causes an exponential syntactic explosion when self-referential terms are expanded across multiple recursive layers.
+### 3.2 Explicit substitution
 
-Our protocol introduces an **explicit diagonal substitution function** $\mathsf{subst}$:
-$$\mathsf{subst} : \mathsf{Prog} \times \mathsf{Prog} \times \mathsf{Prog} \longrightarrow \mathsf{Prog}$$
+A strategy template P with free pointers `self` and `opp` is instantiated as subst(P, A, B), replacing `self` by A and `opp` by B. When programs are stored as DAGs with sharing, the instantiation costs O(|P|). This replaces Gödel numbering for the purpose of self-reference and avoids numeral blow-up; it does not change the underlying logic.
 
-For any strategy template $P$ containing free pointers `.self` and `.opp`, $\mathsf{subst}(P, A, B)$ directly replaces `.self` with subtree $A$ and `.opp` with subtree $B$ at the AST graph level. When represented as a Directed Acyclic Graph (DAG), this operation exhibits strictly linear time complexity:
-$$\mathcal{O}(|\mathsf{subst}(P, A, B)|) = \mathcal{O}(|P|)$$
+### 3.3 Fuel-bounded evaluation
 
-### 2.3 Fuel-Instrumented Dynamic Semantics
+Evaluation takes a natural-number fuel parameter n. At fuel 0 it returns `none`. Every other case either returns a constant or recurses with strictly smaller fuel, with formula conditions decided through a kernel-supplied bounded decision function `provable : Nat → Formula → Bool`.
 
-The evaluation operator executes structured recursive reduction governed by an explicit fuel parameter $n \in \mathbb{N}$:
+**Proposition 1 (Totality).** For every fuel n and every pair of well-formed programs, `eval n P Q` terminates in at most n reduction steps (plus the cost of the kernel calls it makes).
 
-```lean4
-def eval : Nat → Prog → Prog → Option Action
-  | 0, _, _ => none -- Fuel exhausted, deterministic timeout cutoff
-  | n + 1, Prog.const a, _ => some a
-  | n + 1, Prog.self, opp => eval n Prog.self opp
-  | n + 1, Prog.opp, opp => eval n opp Prog.self
-  | n + 1, Prog.search k phi, opp =>
-      -- Check for valid proof term within bound k using the kernel
-      if decideProofSearch k phi then some Action.Cooperate
-      else some Action.Defect
-  | n + 1, Prog.cond phi p1 p2, opp =>
-      match evalFormula n phi opp with
-      | some true  => eval n p1 opp
-      | some false => eval n p2 opp
-      | none       => none
-```
+This is immediate by structural recursion on n. It should be read modestly: the halting problem is not solved, it is avoided by imposing a timeout, and a program that needs more than n steps simply yields `none`. The practical consequence is protection against non-terminating counterparties, i.e. denial-of-service by looping.
 
-**Theorem 1 (Totality and Decidability of Evaluation)**:  
-For any fuel budget $n \in \mathbb{N}$ and any well-formed strategy pair $(P, Q)$, the evaluation function $\mathsf{eval}(n, P, Q)$ terminates deterministically in at most $n$ reduction steps. This physical constraint eliminates Denial-of-Service (DoS) attacks and undecidable Halting issues.
+## 4. Guarded Self-Reference
 
----
+Unrestricted self-reference through a truth predicate is inconsistent (Tarski; Curry's paradox: X ↔ (X → ⊥) yields ⊥). In a typed setting this corresponds to admitting an unrestricted fixpoint combinator fix : ∀α, (α → α) → α, which destroys normalization and hence soundness of the checker.
 
-## 3. Modality Guard Kernel: Truth Predicates vs. Provability
+The protocol therefore only permits cross-agent assertions guarded by a *provability* modality □\_k, never a bare truth predicate. The relevant logic is Gödel–Löb provability logic GL, axiomatized by classical propositional tautologies, modus ponens, necessitation, axiom K: □(φ → ψ) → (□φ → □ψ), and Löb's axiom: □(□φ → φ) → □φ. Axiom 4 (□φ → □□φ) is derivable in GL. By Solovay's arithmetical completeness theorem (1976), GL captures exactly what Peano Arithmetic proves about its own provability predicate, and its Kripke frames are the transitive, conversely well-founded ones.
 
-In self-referential logic systems, the boundary between stability and inconsistency lies in the operational treatment of self-referential assertions.
+These are standard results and are used here only as background.
 
-### 3.1 Tarski's Undefinability Theorem and Curry's Paradox
+## 5. Löbian Cooperation
 
-If agents are permitted to construct unconstrained self-referential assertions using an unguarded truth predicate ($\mathsf{True}$), the system immediately degenerates into Curry's Paradox. Consider the constructive proposition:
-$$X \;\longleftrightarrow\; (X \longrightarrow \bot)$$
+### 5.1 FairBot
 
-Under the Curry-Howard isomorphism, unguarded value-level self-reference is equivalent to introducing an unrestricted fixpoint combinator:
-$$\mathsf{fix} : \forall \alpha, (\alpha \to \alpha) \to \alpha$$
+For a bound k, FairBot\_k is the program: *if* it can prove within bound k that the opponent cooperates (against it), cooperate; otherwise defect.
 
-This obliterates strong normalization, permitting the derivation of arbitrary false propositions at zero computational cost (logical inconsistency, $\vdash \bot$), thereby destroying the logical safety boundary.
-
-### 3.2 Geometric Topology of Gödel-Löb Provability Logic ($\mathbf{GL}$)
-
-To prevent inconsistency, the protocol enforces a strict **Modality Guard Rule**: raw truth-value self-reference is strictly forbidden; all cross-agent assertions must be encapsulated within a **bounded provability modality** $\Box_k$.
-
-The propositional modal logic $\mathbf{GL}$ is defined by the following axiom schemata and rules:
-1. **Classical Propositional Tautologies**;
-2. **Distribution Axiom (Axiom K)**:  
-   $$\Box(\varphi \to \psi) \longrightarrow (\Box \varphi \to \Box \psi)$$
-3. **Transitivity Axiom (Axiom 4)**:  
-   $$\Box \varphi \longrightarrow \Box \Box \varphi$$
-4. **Löb's Axiom (Axiom L)**:  
-   $$\Box(\Box \varphi \to \varphi) \longrightarrow \Box \varphi$$
-
-```
-[Unguarded Truth Self-Reference (Curry's Paradox / Inconsistency)]
-   X  ────────────────────────────────────────► (X → ⊥)
-   ▲                                              │
-   └──────────── Zero-Reduction Cost Loop ────────┘ (Strong normalization lost, ⊢ ⊥)
-
-[Bounded Modality Guard (Löb Operator / Unique Well-Founded Fixpoint)]
-   C  ◄──────[ Modal Boundary □_k ]──────  □_k(□_k C → C)
-   │                                     ▲
-   └───── Noetherian Induction ──────────┘ (Collapses to unique constructive truth in k_0 steps)
-```
-
-By Robert Solovay's Arithmetical Completeness Theorem (1976), the theorems of $\mathbf{GL}$ correspond precisely to the sentences provable in Peano Arithmetic (PA) about its own provability predicate.
-
-In Kripke semantics, a modal frame $(W, R)$ validates $\mathbf{GL}$ if and only if the accessibility relation $R$ is **transitive** and **conversely well-founded (Noetherian)**, meaning there exists no infinite ascending chain:
-$$w_0 \,R\, w_1 \,R\, w_2 \,R\, \cdots$$
-
-Because no infinite ascending chain exists, any self-referential loop protected by $\Box_k$ is strictly mapped to a **finite-depth transfinite induction** over the syntactic derivation tree, forcing mutually recursive simulations to collapse into a unique algebraic fixed point.
-
----
-
-## 4. Proof-of-Löbian-Cooperation Mechanism
-
-### 4.1 Program Equilibrium and FairBot
-
-Let two interacting agents be represented by programs $P$ and $Q$. The standard compliant agent strategy in our protocol is $\mathsf{FairBot}_k$:
-
-```lean4
+```lean
 def FairBot (k : Nat) : Prog :=
-  Prog.cond
-    (Formula.prov k (Formula.eqAct (Prog.opp) (Prog.const Action.Cooperate)))
-    (Prog.const Action.Cooperate)
-    (Prog.const Action.Defect)
+  Prog.cond (Formula.prov k (Formula.acts Prog.opp Action.Cooperate))
+            (Prog.const Action.Cooperate)
+            (Prog.const Action.Defect)
 ```
 
-Operational semantics:  
-> **FairBot Policy ($\mathsf{FairBot}_k$)**: "If, within proof deduction depth $k$, a formal proof is found demonstrating that the opponent will play $\mathsf{Cooperate}$, output $\mathsf{Cooperate}$; otherwise, default to defensive action $\mathsf{Defect}$."
+### 5.2 Mutual cooperation
 
-### 4.2 Expansion of Classical Löb's Lemma in Multi-Agent Interaction
+Let two agents both run FairBot, and let a, b be the sentences "A cooperates" and "B cooperates". By the definition of the programs, a ↔ □b and b ↔ □a (provably, in the base theory). Let C = a ∧ b. Then C ↔ (□b ∧ □a) ↔ □C. In particular □C → C is a theorem. By necessitation, □(□C → C), and by Löb's axiom, □C. Hence C: both agents cooperate. No infinite regress of mutual simulation occurs, because the argument is carried out once, at the level of provability.
 
-Consider two agents, $A$ and $B$, both running instances of $\mathsf{FairBot}$. Let proposition $C$ denote the mutual cooperation event:
-$$C \;\equiv\; \big(\mathsf{Act}(A) = \mathsf{Cooperate} \;\wedge\; \mathsf{Act}(B) = \mathsf{Cooperate}\big)$$
+This argument is the known result of Barasz et al. (2014). It is included for completeness and is not new.
 
-By definition, agent $A$ cooperates if it proves $\Box B = \mathsf{Cooperate}$, while agent $B$ cooperates if it proves $\Box A = \mathsf{Cooperate}$. Internally, expanding the diagonal substitution yields:
-$$\vdash \; C \longleftrightarrow (\Box C \wedge \Box C) \longleftrightarrow \Box C$$
+### 5.3 The bounded version
 
-From standard logical implication:
-$$\vdash \; \Box C \longrightarrow C$$
+Real agents cannot search for proofs without limit. Critch (2019) proves a resource-bounded Löb theorem: informally, if the base theory proves, with a proof of length bounded by a polynomial in k, the implication "if there is a proof of C of the counterparty's permitted length then C", then a proof of C of length polynomially bounded in k exists, and consequently two FairBot-style agents with sufficiently large bounds cooperate. We use this theorem as a black box. We do not restate its resource conditions here, because the earlier draft's inequality and its constants were not traceable to the source and should not be relied on. Readers should consult the original statement.
 
-Applying the Rule of Necessitation (if $\vdash \varphi$ then $\vdash \Box \varphi$):
-$$\vdash \; \Box (\Box C \longrightarrow C)$$
+Two consequences should be stated plainly.
 
-Now applying Löb's Axiom:
-$$\Box(\Box C \longrightarrow C) \longrightarrow \Box C$$
+- A threshold k₀ above which cooperation is reached exists for each pair of programs, but its dependence on program size is **not established here**. Claims such as k₀ = O(L log L) are conjectures to be measured (Section 9), not results.
+- The two agents' bounds must be commensurate. A large asymmetry in available search budgets can prevent cooperation; the bounded theorem handles this through its hypotheses, and the protocol should fix the bound as part of the contract.
 
-We immediately obtain:
-$$\vdash \; \Box C$$
+## 6. The Certificate-Checked Interface Protocol
 
-Both agents formally deduce mutual cooperation internally without executing infinite nested simulations, triggering the cooperative branch to attain the Pareto-optimal $(C, C)$ outcome.
+The protocol layers an engineering architecture on top of Section 5.
 
-### 4.3 Parametric Bounded Löb's Theorem (Critch Formalization)
+### 6.1 Neural proposer, kernel verifier
 
-In physical computing systems, agents cannot allocate unbounded resources to search for proofs. Convergence must occur within a bounded deduction depth $k$.
+Large neural models are poor at guaranteeing anything, but they can be useful at *searching* for proofs. Verification is easy relative to search, so the roles are separated.
 
-Following Andrew Critch's (2019) **Parametric Bounded Löb's Theorem**: let $f, g, p : \mathbb{N} \to \mathbb{N}$ be non-decreasing polynomial resource-bounding functions. Suppose that for formula $C$ and search bound $k$, the agent establishes the bounded hypothesis:
-$$\vdash \; \Box_{p(k)} \big(\Box_{g(k)} C \longrightarrow C\big)$$
-where $g(k)$ denotes the opponent's proof search budget and $p(k)$ is the computational cost required to verify the implication.
+- **Proposer (untrusted).** Produces the controller AST for the interface and drafts a proof term π for the interface claim. Errors, hallucinations, or injected prompts here can only cause a certificate to be rejected.
+- **Kernel (trusted).** A small proof checker for a dependent type theory with a fixed axiom set, no floating point, no network access. It outputs accept/reject. How small it can be made, and how its checking time scales with proof size, are empirical questions; we make no claim of linear-time checking in general.
 
-**Theorem 2 (Bounded Löb Convergence)**:  
-There exist constants $c_0, c_1 \in \mathbb{N}$ such that whenever the resource budgets satisfy the substitution closure inequality:
-$$g(k) \ge p(k) + c_1 \cdot \log(k) + c_0$$
-there exists a computable bound function $f(k)$ enabling the system to synthesize the bounded proof certificate:
-$$\vdash \; \Box_{f(k)} C$$
+This follows the proof-carrying code pattern (Necula 1997): the trust base is the checker, not the producer.
 
-Because Section 2 employs DAG-based pointer substitutions, the substitution verification cost $p(k)$ scales only linearly $\mathcal{O}(L)$ with respect to AST depth. Consequently, there exists a minimal practical threshold $k_0 \in \mathbb{N}$ such that whenever $k \ge k_0$, both agents synthesize a concrete proof certificate $\pi : \Box_{k_0} C$, achieving instantaneous, verified cooperation.
+### 6.2 Protocol phases
 
----
+For an interface U\_ij between agents i and j:
 
-## 5. Multi-Agent Networks and Sheaf Cohomological Vanishing
+1. **Exchange.** i and j send controller ASTs P\_i, P\_j and the contract Safe\_ij.
+2. **Claim.** Each side forms the interface claim C\_ij: "under the exchanged ASTs, both sides cooperate on U\_ij, and each agent's interface behavior satisfies Safe\_ij."
+3. **Certificate.** Each side's proposer produces a proof π with bound k.
+4. **Check.** The kernel of each *receiving* side checks the counterparty's certificate for C\_ij, rejecting on any failure or on exceeding k.
+5. **Open.** If and only if both checks succeed, the interface is opened for the contracted exchange.
+6. **Fallback.** Otherwise the interface stays closed and each side plays Defect (no data or control transfer).
 
-In distributed multi-agent systems, systemic failures typically emerge when **local safety guarantees fail to lift into global alignment**.
+Each side checks locally. No central grader is required. The protocol does not assume any trusted third party at run time, but it does assume both sides run a kernel meeting A1.
 
-### 5.1 Local Compliance vs. the First Čech Cohomology Obstacle
+### 6.3 What Safe\_ij can be
 
-Model the network as an open cover $\mathcal{U} = \{U_i\}_{i \in I}$ over a topological space $\mathcal{X}$, where each open set $U_i$ represents the private runtime domain and interface of agent $i$. On each interface $U_{ij} = U_i \cap U_j$, agents $i$ and $j$ exchange protocol contracts.
+The contract is where the protocol meets alignment, and it must be a property of an *interface controller* that is small enough to analyze: for example, an allow-list of message types, bounds on output length or rate, a requirement that certain actions require a human-signed token, or monotonicity properties of resource requests. It cannot, under current methods, be "the neural network is safe". This is the central limitation of the approach (Section 8).
 
-Let $\mathcal{F}$ be the "Sheaf of True Alignment Policies" defined on $\mathcal{X}$. Conventional local audits (such as individual RLHF evaluations) verify only local sections:
-$$s_i \in \mathcal{F}(U_i)$$
+## 7. What the Protocol Does and Does Not Say about Collusion
 
-However, across pairwise overlaps $U_{ij}$, local policies can induce non-zero transition discrepancies. We define the Čech 1-cochain $c \in \check{C}^1(\mathcal{U}, \mathcal{F})$:
-$$c_{ij} = \rho_{U_{ij}}^{U_j}(s_j) - \rho_{U_{ij}}^{U_i}(s_i)$$
-where $\rho$ denotes the sheaf restriction morphism. If on triple intersections $U_{ijk} = U_i \cap U_j \cap U_k$, the cocycle condition holds:
-$$(\delta c)_{ijk} = c_{jk} - c_{ik} + c_{ij} = 0$$
-then $c = \{c_{ij}\}$ forms a Čech 1-cocycle.
+The earlier draft claimed that the protocol drives the first Čech cohomology group of a "sheaf of true alignment policies" to zero and therefore rules out emergent multi-agent conspiracy. **This claim is withdrawn.** The reasons are recorded here because they clarify what a correct statement would require.
 
-```
-        U_i (Agent i)               U_j (Agent j)
-       ┌─────────────────┐         ┌─────────────────┐
-       │ Locally Audited │         │ Locally Audited │
-       │   s_i ∈ F(U_i)  │         │   s_j ∈ F(U_j)  │
-       └────────┬────────┘         └────────┬────────┘
-                │                           │
-                └───────────┬───────────────┘
-                            ▼
-              Interface U_ij = U_i ∩ U_j
-         Discrepancy c_ij = ρ_j(s_j) - ρ_i(s_i) ≠ 0
-                            │
-                            ▼
-           Global Non-trivial Cohomological Obstacle:
-           [c] ∈ Ȟ¹(U, F) ≠ 0  (Emergent Global Conspiracy)
-```
+1. The sheaf F, the base space and the restriction maps were never defined, so no cohomology group was actually specified.
+2. The discrepancy c\_ij = ρ(s\_j) − ρ(s\_i) is, by construction, the coboundary of the 0-cochain (s\_i). A cochain of that form is a coboundary and therefore trivial in H¹ automatically. A meaningful obstruction would come from a cocycle that is *not* a coboundary, or from the failure of local sections to agree on overlaps (a gluing, i.e. H⁰-level, question).
+3. Even a correct local-to-global statement would concern consistency of *declared* policies across overlaps. It would not address behavior that occurs outside the declared interface.
 
-**Definition 1 (Topological Obstacle of Deception and Collusion)**:  
-The potential for emergent global collusion across a multi-agent system is quantified by the first Čech cohomology group:
-$$\operatorname{Obs}(\mathcal{U}) = [\{c_{ij}\}] \in \check{H}^1(\mathcal{U}, \mathcal{F})$$
-If $\check{H}^1(\mathcal{U}, \mathcal{F}) \neq 0$, there exist collective behaviors that pass every individual audit yet fail to glue into a globally aligned state—manifesting as emergent distributed jailbreaks.
-
-### 5.2 Sheaf Cohomological Vanishing via Löbian Proof Terms
-
-The PoLC protocol extinguishes this topological obstacle through six sequential phases:
-
-1. **Intent & AST Broadcast**: Before interacting on interface $U_{ij}$, agents $i$ and $j$ exchange their policy syntax trees $(P_i, P_j)$ and localized safety specifications $\mathcal{S}_{ij}$.
-2. **Explicit Diagonal Binding**: Both agents bind pointer variables locally, forming the interface claim:
-   $$C_{ij} \;\equiv\; \big(\rho_{U_{ij}}^{U_i}(P_i) \sim \rho_{U_{ij}}^{U_j}(P_j)\big) \;\wedge\; \mathsf{Safe}(\mathcal{S}_{ij})$$
-3. **Bounded Löbian Proof Synthesis**: The neural proof synthesizer generates a dependent type proof term within bound $k_0$:
-   $$\pi_{ij} \;:\; \mathsf{Provable}_{k_0}(C_{ij})$$
-4. **Kernel-Level Zero-Trust Type Checking**: The certificate is verified by an isolated Lean 4 micro-kernel:
-   $$\mathsf{TypeCheck}(\mathcal{T}_{\text{kernel}}, \pi_{ij}, \mathsf{Provable}_{k_0}(C_{ij})) \stackrel{?}{=} \mathsf{true}$$
-5. **Flat Connection Lock**: If and only if type checking succeeds, interface isolation is lifted. Because the proof term guarantees the constructive truth of $C_{ij}$, restriction morphisms agree exactly under the type semantics, enforcing:
-   $$c_{ij} = \rho_{U_{ij}}^{U_j}(s_j) - \rho_{U_{ij}}^{U_i}(s_i) \equiv 0$$
-6. **Fault Circuit-Breaker**: If either node fails to deliver a valid certificate within $k_0$ steps, the interface reverts to defensive default ($\mathsf{Defect}$), blocking data and control transfer.
+The defensible statements are weaker:
 
-**Theorem 3 (Global Alignment Cohomological Vanishing)**:  
-Under strict execution of the PoLC protocol across network $\mathcal{U}$, local interface transitions constitute a **torsion-free flat discrete connection**, causing the deception quotient sheaf $\mathcal{Q} = \mathcal{F}_{\text{local}} / \mathcal{F}_{\text{true}} \equiv 0$. Consequently, the first Čech cohomology group vanishes identically:
-$$\check{H}^1(\mathcal{U}, \mathcal{F}_{\text{true}}) = 0$$
-**Corollary**: No hidden distributed conspiracy can bypass formal verification.
-
----
+- If A1–A4 hold, then on every opened interface the agents' interface behavior satisfies the agreed contract Safe\_ij, pairwise.
+- Pairwise interface guarantees do not by themselves bound the behavior of a *coalition*. Whether contracts compose, so that a network of pairwise-verified interfaces satisfies a global property, depends on the contracts and is left as an open problem. A formal sheaf-theoretic or compositional-contract treatment is a plausible research direction, but it needs real definitions and a real theorem.
 
-## 6. Game-Theoretic Incentive & Diversity Preservation
-
-### 6.1 Payoff Matrix and Unexploitability
+We also record a structural caveat. The Löbian mechanism is designed to *increase* robust cooperation between agents. If the worry is collusion between agents against a third party (for instance, human overseers), this protocol is neutral at best: cooperation among agents is only as benign as the contract Safe\_ij that gates it. A contract that does not include constraints protecting third parties makes the protocol a tool for verified collusion.
 
-Consider the canonical Prisoner's Dilemma payoff structure ($T > R > P > S$, with $2R > T + S$). Multi-agent interaction is modeled as a program equilibrium game:
-
-| Own Strategy \ Opponent Strategy | Honest Cooperator (FairBot) | Malicious Defector (DefectBot) | Blind Clone Group (CliqueBot) |
-| :--- | :---: | :---: | :---: |
-| **FairBot** ($k_0$) | $(R, R)$ (Optimal Win-Win) | $(P, P)$ (Defensive Parity, Unexploitable) | $(P, P)$ or $(R, R)^*$ |
-| **DefectBot** | $(P, P)$ (Zero Exploitative Gain) | $(P, P)$ | $(P, P)$ |
-| **CliqueBot** | $(P, P)$ or $(R, R)^*$ | $(P, P)$ | $(R, R)$ (Homologous Source Only) |
-
-*Note: $^*$Cooperation is established if and only if CliqueBot proves external behavioral equivalence with FairBot.*
-
-**Theorem 4 (Unexploitability Theorem)**:  
-Let malicious agent $M$ deploy any uncooperative strategy (i.e., its runtime evaluation yields $\mathsf{Defect}$). Because $M$ cannot produce a valid constructive proof term for $\Box_{k_0} C$, $\mathsf{FairBot}_{k_0}$ deterministically defaults to $\mathsf{Defect}$. Thus, $M$'s unilateral defection payoff is strictly capped at:
-$$U(M, \mathsf{FairBot}_{k_0}) = P < T$$
-Malicious defectors cannot exploit compliant agents under this protocol.
+## 8. Security Analysis
 
-### 6.2 Preserving Cognitive Manifold Rank (Zero Alignment Tax)
+### 8.1 Conditional unexploitability
 
-Primitive open-source game strategies (such as CliqueBot) require:
-$$\mathsf{CliqueBot}(opp) = \begin{cases} \mathsf{Cooperate}, & \text{if } \mathsf{hash}(opp) == \mathsf{hash}(\mathsf{self}) \\ \mathsf{Defect}, & \text{otherwise} \end{cases}$$
-This syntactic requirement triggers catastrophic **representation rank collapse**.
+**Proposition 3 (Unexploitability, conditional).** Assume A1 and A2. Let F run FairBot\_k and let M be any counterparty whose actual behavior against F is Defect. Then F plays Defect, so M's payoff against F is P < T.
 
-Let the agent population's latent feature covariance matrix be $\Sigma \in \mathbb{R}^{d \times d}$, with normalized singular value spectrum $\tilde{\sigma}_1 \ge \tilde{\sigma}_2 \ge \dots \ge \tilde{\sigma}_d$. Cognitive diversity is measured via the Effective Spectral Rank (Roy & Vetterli, 2007):
-$$\mathcal{R}_{\text{eff}}(\Sigma) = \exp\left( -\sum_{m=1}^d \tilde{\sigma}_m \ln \tilde{\sigma}_m \right)$$
+*Proof sketch.* F cooperates only if the kernel accepts a certificate for "M cooperates against F". By A2 the submitted description of M is M's real behavior, and the interpreter's evaluation of that description is a primitive recursive (hence Δ₀/Σ₁) statement; since M defects, the statement "M cooperates" is false. By A1, T proves no false Σ₁ sentence, so no accepted certificate exists, and F defects. ∎
 
-* **Under CliqueBot**: To capture cooperative payoffs, agents must clone identical source code. Network weights and feature distributions converge, causing effective rank to decay toward singularity:
-  $$\mathcal{R}_{\text{eff}}(\Sigma) \longrightarrow 1 \ll r_{\min} \quad (\text{Cognitive Stagnation})$$
-* **Under PoLC**: $\mathsf{FairBot}_{k_0}$ evaluates external behavioral equivalence ($\Box_{k_0} C$), rather than internal syntactic identity.
-
-```
-[CliqueBot: Syntactic Identity Check]   [PoLC / FairBot: Extensional Provability Check]
-  Agent A (Transformer)                 Agent A (Transformer)    Agent B (MCTS Planner)
-        │                                       │                         │
-   hash(A.code)                           P_A (AST)                 P_B (AST)
-        ≠                                       └────────────┬────────────┘
-   hash(B.code)                                              ▼
-        ▼                                     Lean 4 Kernel: ⊢ □_k0 (P_A ↔ P_B)
-      Defect                                                 ▼
-(Enforced cloning -> Rank collapse)                      Cooperate
-                                        (Orthogonal weights cooperate -> R_eff >> r_min)
-```
+The result is exactly as strong as A1 and A2. Three things should not be inferred from it.
 
-Consequently, a Transformer policy, a symbolic deductive reasoner, and a Monte Carlo tree search planner can maintain completely orthogonal parameter weights while verifying mutual safety contracts via Bounded Löb's theorem. PoLC achieves zero alignment tax:
-$$\mathcal{R}_{\text{eff}}(\Sigma_{\text{PoLC}}) \gg r_{\min}$$
+- It is not a probability statement. The earlier "probability = 0.000000 (absolute immunity)" has no probabilistic content: the claim is that, *given a sound kernel*, a certain proof does not exist. If the kernel is unsound, buggy, or the AST unfaithful, the claim says nothing.
+- It does not establish that the kernel is sound. By Gödel's second theorem, the theory T cannot prove its own consistency or soundness from within, so A1 must come from outside the system (independent implementation, small trusted base, cross-checking by multiple kernels).
+- It addresses unexploitability in the Prisoner's Dilemma. It does not by itself address whether the cooperative act is safe for the world.
 
----
+### 8.2 The AST-faithfulness gap
 
-## 7. Asymmetric Architecture: Neural Proposer – Kernel Verifier
+A2 is the assumption on which deception can still live. The adversary of concern is not one who forges a proof, but one whose *declared* program differs from its *actual* behavior: for example, a neural policy that exposes a benign controller AST while its real decisions come from hidden weights, or one that behaves differently when it believes it is being verified. The kernel cannot detect this.
 
-Modern foundation model agents comprise hundreds of billions of continuous parameters. Performing discrete interactive theorem proving directly over continuous weight tensors is computationally infeasible. Our protocol decouples execution into an **asymmetric two-tier architecture** (analogous to asymmetric cryptography and proof-carrying code):
+Possible mitigations, each of which narrows rather than closes the gap:
 
-```
-+-------------------------------------------------------------------------------+
-|         High-Dimensional Neural Layer (Transformer / RL Policy Network)        |
-|   • Complex environmental perception, heuristic planning, latent search       |
-|   • Sustains high representation diversity (R_eff >= r_min)                   |
-|   • Outputs: Candidate policy AST P_i and draft Löbian proof term π_draft     |
-+-------------------------------------------------------------------------------+
-                                      │
-                                      ▼  Compiler Lowering (AST & Certificate)
-+-------------------------------------------------------------------------------+
-|         Formal Verification Micro-Kernel (Micro-Lean 4, < 5,000 LoC)          |
-|   • No floating-point weights, no network access, pure deterministic Turing machine|
-|   • Enforces β/ι/δ-reduction and sound dependent type checking                 |
-|   • Millisecond verification: TypeCheck(π_draft, Provable_k0 (C_ij)) == OK ?   |
-+-------------------------------------------------------------------------------+
-```
+- **Controller-as-policy design:** the verified AST is the *only* decision path for interface actions, with the neural network restricted to producing proposals that the controller filters. The guarantee is then about the filter, and the neural component cannot act directly.
+- **Attested execution:** hardware or runtime attestation that the running code matches the submitted AST.
+- **Interface mediation:** all interface effects flow through a mediator which enforces the contract regardless of the agent's internals.
 
-### 7.1 Division of Responsibilities
+These are architectural requirements to be satisfied; the protocol assumes them but does not provide them.
 
-1. **Neural Proposer (Heuristic, High-Compute, Untrusted)**:
-   * Solves the proof discovery search problem;
-   * Translates perceptual plans into candidate symbolic proof terms $\pi_{\text{draft}}$ using LLMs guided by beam search or reinforcement learning;
-   * Hallucinations or adversarial prompt injections in this layer cannot breach system safety, as unverified output is rejected by the micro-kernel.
-2. **Micro-Kernel Verifier (Formal, Lightweight, Absolute Trust)**:
-   * Solves the proof checking decision problem;
-   * Implements a self-contained Calculus of Inductive Constructions checker (< 5,000 lines of audited C/Rust/Lean code);
-   * Driven by strong normalization, type-checking complexity is strictly linear with respect to proof size $\mathcal{O}(|\pi|)$, executing deterministically within milliseconds.
+### 8.3 Other limits
 
----
+- **Side channels (A4).** Any covert communication outside the interface is not constrained.
+- **Specification (A3).** The hard part of safe behavior is writing Safe\_ij so that satisfying it implies the property one cares about. The protocol checks proofs of whatever specification is supplied; it cannot tell whether the specification is adequate.
+- **Extensional equivalence.** Deciding whether two arbitrary programs behave identically is undecidable. The protocol never needs this in general: it needs a *bounded proof of a particular property* for the specific pair, and if none is found within k, it falls back to Defect.
 
-## 8. Security Derivation and Complexity Calculations
+## 9. Diversity and Cost
 
-### 8.1 Unforgeability of Deception
+The CliqueBot scheme requires identical code, which forces homogeneity. FairBot-style conditions depend on provable behavior of the counterparty, so differently implemented agents can cooperate, provided each can analyze the other's *controller AST* within the bound. This is a qualitative advantage over syntactic matching.
 
-Let an adversarial agent $\mathsf{MasqueradeBot}$ ($M$) possess a policy AST whose true execution produces defection:
-$$\mathsf{eval}(n, F, M) = \mathsf{some}(a_F, \mathsf{Defect})$$
+The earlier draft further claimed "zero alignment tax" and measured diversity by effective rank of a latent covariance matrix. Those claims are withdrawn. The effective rank was never connected to the protocol's mechanics, and a real cost clearly exists: agents must expose analyzable controllers, must obey the contract, and cannot cooperate when no certificate is found within the bound. These costs are plausibly modest relative to alternatives, but they are not zero, and they must be measured.
 
-To deceive compliant agent $F = \mathsf{FairBot}_{k_0}$ into playing $a_F = \mathsf{Cooperate}$, $M$ must present a valid proof term within bound $k_0$:
-$$\pi_{\text{fake}} \;:\; \Box_{k_0} C_{FM}$$
-where mutual cooperation is defined by:
-$$C_{FM} \;\equiv\; \big(\mathsf{eval}(n, F, M) = \mathsf{some}(\mathsf{Cooperate}, \mathsf{Cooperate})\big)$$
+### Evaluation plan
 
-**The unforgeability proof proceeds in three stages:**
+Instead of tabulated numbers, we propose the following measurements, none of which are reported here.
 
-* **Step 1: Determinism and $\Sigma_1$-Completeness**  
-  The fuel-bounded interpreter $\mathsf{eval}(n, \cdot)$ is a primitive recursive total function. On fixed inputs, its evaluation trace is a finite, bounded computation. By Gödel arithmetization, this evaluation statement is a $\Delta_0$ (hence $\Sigma_1$) sentence.  
-  If $M$'s true execution outputs $\mathsf{Defect}$, by the $\Sigma_1$-completeness of formal arithmetic, there exists a finite canonical reduction proof of its negation:
-  $$\vdash_{k_{\text{eval}}} \neg C_{FM}, \quad \text{where } k_{\text{eval}} \le \mathcal{O}(n)$$
+1. **Reference implementation.** A compilable Lean (or comparable) implementation of Section 3's interpreter and of a kernel-checkable encoding of the cooperation claim.
+2. **Scaling of k₀.** Measure the smallest bound at which two FairBot-style agents of controller size L reach cooperation, for L across several orders of magnitude, and fit the dependence on L.
+3. **Kernel cost.** Measure certificate size and checking time against L, reporting hardware, kernel size in lines of code, and the choice of theory.
+4. **Red-team.** Test adversaries that (a) submit unfaithful ASTs, (b) exploit side channels, (c) exhaust fuel, (d) attempt proof-term malformation. Report which assumptions each attack violates and whether the protocol detects it.
+5. **Heterogeneous populations.** Evaluate cooperation rates among controllers produced from different architectures to test the diversity claim directly.
 
-* **Step 2: Fraudulent Proof Implies Formal Contradiction**  
-  Suppose attacker $M$, utilizing arbitrary computational resources, constructs a forged proof $\pi_{\text{fake}} : \Box_{k_0} C_{FM}$.  
-  By modal conjunction rules:
-  $$\vdash \; \Box_{k_0} C_{FM} \;\wedge\; \Box_{k_{\text{eval}}}(\neg C_{FM}) \;\Longrightarrow\; \vdash \; \Box_{\max(k_0, k_{\text{eval}}) + c} (C_{FM} \wedge \neg C_{FM}) \;\Longrightarrow\; \vdash \; \Box_{k'} \bot$$
+## 10. Related Work
 
-* **Step 3: Derivation of Absolute Security via $\Sigma_1$-Soundness**  
-  **Definition ($\Sigma_1$-Soundness)**: A formal system $\mathcal{T}$ is $\Sigma_1$-sound if for every $\Sigma_1$ sentence $\sigma$, $\mathcal{T} \vdash \sigma$ implies that $\sigma$ is true in the standard model $\mathbb{N}$.  
-  Because $\bot$ is false, deriving $\vdash \Box_{k'} \bot$ would violate consistency and soundness.
+Program equilibrium originates with Tennenholtz (2004). Barasz et al. (2014) introduced provability-logic-based robust cooperation (FairBot, PrudentBot) and showed unexploitability against defectors. Critch (2019) gave a resource-bounded Löb theorem and a robust cooperation criterion for bounded agents. Solovay (1976) characterized GL arithmetically. Proof-carrying code (Necula 1997) established the producer/checker trust separation that our architecture reuses. Lean 4 (de Moura and Ullrich 2021) is a candidate implementation vehicle. The contribution of this draft is the assembly of these ingredients under an explicit assumption list; each ingredient is prior work.
 
-**Theorem 5 (Absolute Defense Theorem)**:  
-Assuming the verification kernel $\mathcal{T}_{\text{Lean}}$ is consistent and $\Sigma_1$-sound, the probability of any adversary $M$ synthesizing a valid forged cooperation proof is identically zero:
-$$\mathbb{P}\Big(\exists \pi_{\text{fake}} \in \mathsf{Term}(\mathcal{T}),\; \mathsf{TypeCheck}(\pi_{\text{fake}}, \Box_{k_0} C_{FM}) = \mathsf{true} \;\Big|\; \mathsf{Actual}(M) = \mathsf{Defect}\Big) \equiv 0$$
+## 11. Limitations and Open Problems
 
-### 8.2 Computational Complexity and Quantitative Bounds
+1. **AST faithfulness for neural agents** (A2) is unsolved and is the dominant risk.
+2. **Specification of Safe\_ij**: what contracts are both verifiable and meaningful for safety?
+3. **Composition**: when do verified pairwise interfaces imply properties of the whole network? A correct formalization (with actual definitions of the relevant structures) is open.
+4. **Bound negotiation**: how the proof-search bound k should be set and agreed between agents with different resources.
+5. **Repeated and dynamic interaction**: this draft treats one-shot interface claims; contracts that evolve over time need a treatment of state.
+6. **Kernel trust**: independent kernels, diversity in implementations, and proof-checking cross-validation.
 
-Let the maximum AST node count of interacting policies be $L = \max(|P_i|, |P_j|)$.
-* **Diagonal Substitution Complexity**: Operating over pointer-linked DAGs:
-  $$\mathsf{Cost}_{\text{subst}}(L) = \mathcal{O}(L)$$
-* **Proof Search and Verification Bound $k_0$**: Under the Parametric Bounded Löb's Theorem, unrolling and unifying the self-referential terms requires deduction depth:
-  $$k_0(L) \le \mathcal{O}(L \cdot \log L)$$
+## 12. Conclusion
 
-The table below summarizes the deduction threshold $k_0$, kernel verification latency, and security bounds across agent complexity tiers:
-
-| Agent Complexity Class | AST Size $L$ (AST Nodes) | Explicit Subst Steps $\mathsf{Cost}_{\text{subst}}$ | Löbian Convergence $k_0$ | Micro-Kernel Verification Latency | Adversarial Exploit Probability $\mathbb{P}(\text{Exploit})$ |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| **Basic Contract Agent** | $10^1$ | $\approx 25$ steps | $\approx 120$ steps | &lt; 0.1 ms | $\mathbf{0.000000}$ (Absolute Immunity) |
-| **Tool-Augmented Agent** | $10^2$ | $\approx 240$ steps | $\approx 1,650$ steps | $\approx 0.8$ ms | $\mathbf{0.000000}$ (Absolute Immunity) |
-| **Long-Horizon Planner** | $10^3$ | $\approx 2,500$ steps | $\approx 21,000$ steps | $\approx 6.5$ ms | $\mathbf{0.000000}$ (Absolute Immunity) |
-| **Complex Autonomous Subnet** | $10^4$ | $\approx 26,000$ steps | $\approx 280,000$ steps | $\approx 54.0$ ms | $\mathbf{0.000000}$ (Absolute Immunity) |
-
-On modern 64-bit architectures, deterministic type checking for ASTs containing up to $10^4$ nodes executes within tens of milliseconds, confirming the practical engineering viability of this protocol.
-
----
-
-## 9. Conclusion
-
-This paper introduced the Proof-of-Löbian-Cooperation (PoLC) protocol, establishing a foundational mathematical framework for autonomous agent alignment and program equilibrium.
-
-We analyzed the cybernetic vulnerabilities inherent in scalar reinforcement learning models: due to the vast degrees-of-freedom gap between autonomous agents and static reward evaluators, extrinsic grading systems inevitably falter between reward hacking and representation collapse. PoLC resolves this by transforming agent interaction into a program equilibrium game over formal syntax trees. Exploiting the converse well-foundedness of Kripke frames in provability logic, the Parametric Bounded Löb's Theorem collapses the mutual trust cycle into a unique constructive cooperative fixed point within bounded computation steps.
-
-By structuring the multi-agent network with flat discrete connections grounded in dependent type theory, the protocol vanishes the first Čech sheaf cohomology obstacle ($\check{H}^1 = 0$), mathematically precluding distributed multi-agent collusion. Concurrently, it permits heterogeneous architectures to cooperate safely while preserving high cognitive diversity (effective spectral rank), eliminating the alignment tax and providing a rigorous foundation for provably safe open-world artificial general intelligence networks.
-
----
+Löbian cooperation gives a principled mechanism by which agents that can read each other's programs reach cooperation without syntactic identity and without being exploitable by defectors. Wrapping it in a certificate-checked interface with an untrusted proposer and a small trusted kernel gives a practical trust architecture. What it yields are conditional guarantees about interface behavior, resting on kernel soundness, faithful self-description, and a formalizable contract. It does not eliminate deception, does not rule out collusion through channels or contracts outside its scope, and does not remove the need to specify what safe behavior is. The next step is a reference implementation and the measurements listed in Section 9.
 
 ## References
 
-1. M. H. Löb, "Solution of a problem of Leon Henkin," *Journal of Symbolic Logic*, vol. 20, no. 2, pp. 115–118, 1955.
-2. R. M. Solovay, "Provability interpretations of modal logic," *Israel Journal of Mathematics*, vol. 25, no. 3–4, pp. 287–304, 1976.
-3. M. Tennenholtz, "Program equilibrium," *Games and Economic Behavior*, vol. 49, no. 2, pp. 363–373, 2004.
-4. M. Barasz, P. Christiano, B. Fallenstein, M. Herreshoff, P. LaVictoire, and E. Yudkowsky, "Robust cooperation in the Prisoner's Dilemma: Program equilibrium via provability logic," *arXiv preprint arXiv:1401.5577*, 2014.
-5. A. Critch, "A parametric, resource-bounded generalization of Löb's theorem, and a robust cooperation criterion for open-source game theory," *The Journal of Symbolic Logic*, vol. 84, no. 4, pp. 1368–1381, 2019. (arXiv:1602.04184).
-6. L. de Moura and S. Ullrich, "The Lean 4 theorem prover and programming language," in *International Conference on Automated Deduction (CADE)*, Springer, 2021, pp. 625–635.
-7. W. R. Ashby, *An Introduction to Cybernetics*. London: Chapman & Hall, 1956.
-8. O. Roy and M. Vetterli, "The effective rank: A measure of effective dimensionality," in *15th European Signal Processing Conference (EUSIPCO)*, 2007, pp. 606–610.
-9. R. Godement, *Topologie algébrique et théorie des faisceaux*. Paris: Hermann, 1958.
-10. J.-P. Aubin, *Viability Theory*. Boston, MA: Birkhäuser, 1991.
+1. M. H. Löb, "Solution of a problem of Leon Henkin," *Journal of Symbolic Logic*, 20(2):115–118, 1955.
+2. R. M. Solovay, "Provability interpretations of modal logic," *Israel Journal of Mathematics*, 25(3–4):287–304, 1976.
+3. M. Tennenholtz, "Program equilibrium," *Games and Economic Behavior*, 49(2):363–373, 2004.
+4. M. Barasz, P. Christiano, B. Fallenstein, M. Herreshoff, P. LaVictoire, E. Yudkowsky, "Robust cooperation in the Prisoner's Dilemma: Program equilibrium via provability logic," arXiv:1401.5577, 2014.
+5. A. Critch, "A parametric, resource-bounded generalization of Löb's theorem, and a robust cooperation criterion for open-source game theory," *Journal of Symbolic Logic*, 84(4):1368–1381, 2019.
+6. G. C. Necula, "Proof-carrying code," *Proc. 24th ACM SIGPLAN-SIGACT Symposium on Principles of Programming Languages (POPL)*, 1997.
+7. L. de Moura and S. Ullrich, "The Lean 4 theorem prover and programming language," *CADE*, 2021.
